@@ -15,38 +15,6 @@ serve(async (req) => {
   }
 
   try {
-    // Verify authentication
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: 'No authorization header' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 }
-      )
-    }
-
-    // Create Supabase client with auth context
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false
-        }
-      }
-    )
-
-    // Verify the JWT token
-    const token = authHeader.replace('Bearer ', '')
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-
-    if (authError || !user) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid token' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 }
-      )
-    }
-
     const formData = await req.formData()
     const files = formData.getAll('files')
 
@@ -56,6 +24,11 @@ serve(async (req) => {
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
       )
     }
+
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    )
 
     // Upload files to pdfs bucket
     const uploadPromises = files.map(async (file: any) => {
@@ -85,8 +58,7 @@ serve(async (req) => {
       .from('pdf_analysis')
       .insert({
         status: 'processing',
-        input_files: uploadedFiles,
-        user_id: user.id // Add user_id to track ownership
+        input_files: uploadedFiles
       })
       .select()
       .single()
@@ -170,6 +142,10 @@ serve(async (req) => {
 
         const results = (await Promise.all(processPromises)).filter(Boolean)
 
+        if (results.length === 0) {
+          throw new Error('No valid data could be extracted from the PDFs')
+        }
+
         // Create CSV content
         const csvHeader = Object.keys(results[0]).join(',')
         const csvRows = results.map(row => 
@@ -208,7 +184,6 @@ serve(async (req) => {
             error: error.message
           })
           .eq('id', analysis.id)
-          .eq('user_id', user.id) // Add user_id check for security
       }
     })())
 

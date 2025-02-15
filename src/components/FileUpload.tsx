@@ -1,5 +1,5 @@
 
-import React, { useCallback, useState, useEffect } from 'react';
+import React, { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { toast } from '../components/ui/use-toast';
 import { Progress } from '../components/ui/progress';
@@ -78,27 +78,11 @@ const FileUpload = () => {
         formData.append('files', file);
       });
 
-      // Get the current session
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-
-      if (sessionError || !session) {
-        toast({
-          title: "Authentication Error",
-          description: "Please log in to process files",
-          variant: "destructive",
-        });
-        setProcessing(false);
-        return;
-      }
-
       const response = await fetch(
         'https://oknexztwmsdbpurjbtys.supabase.co/functions/v1/process-pdfs',
         {
           method: 'POST',
-          body: formData,
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`
-          }
+          body: formData
         }
       );
 
@@ -131,7 +115,7 @@ const FileUpload = () => {
             setProcessing(false);
             toast({
               title: "Processing complete",
-              description: "Your files have been analyzed successfully",
+              description: "Your files have been analyzed successfully. Click 'Download Results' to get your data.",
             });
           } else if (analysis.status === 'error') {
             clearInterval(interval);
@@ -167,7 +151,7 @@ const FileUpload = () => {
       const url = URL.createObjectURL(data);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'analysis-result.txt';
+      a.download = 'analysis-results.csv';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -187,7 +171,7 @@ const FileUpload = () => {
     }
   };
 
-  useEffect(() => {
+  React.useEffect(() => {
     return () => {
       files.forEach(file => {
         if (file.preview) {
