@@ -38,7 +38,8 @@ interface DatabaseAnalysis {
   summary_stats: Json | null;
 }
 
-function isSummaryStats(data: Json): data is SummaryStats {
+// Changed return type to be more specific about the shape
+function isSummaryStats(data: Json): data is { [K in keyof SummaryStats]: Json } {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
   
   const stats = data as Record<string, unknown>;
@@ -138,7 +139,7 @@ export function useFileAnalysis() {
             const typedAnalysis: Analysis = {
               ...dbAnalysis,
               summary_stats: dbAnalysis.summary_stats && isSummaryStats(dbAnalysis.summary_stats) 
-                ? dbAnalysis.summary_stats 
+                ? dbAnalysis.summary_stats as unknown as SummaryStats 
                 : null
             };
             
