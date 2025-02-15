@@ -14,6 +14,7 @@ interface Analysis {
   id: string;
   status: string;
   output_file: string | null;
+  summary_stats: any;
 }
 
 const FileUpload = () => {
@@ -77,22 +78,17 @@ const FileUpload = () => {
         formData.append('files', file);
       });
 
-      // Get the current session
-      const { data: { session } } = await supabase.auth.getSession();
-
       const response = await fetch(
         'https://oknexztwmsdbpurjbtys.supabase.co/functions/v1/process-pdfs',
         {
           method: 'POST',
-          body: formData,
-          headers: {
-            'Authorization': `Bearer ${session?.access_token}`
-          }
+          body: formData
         }
       );
 
       if (!response.ok) {
-        throw new Error('Failed to process files');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to process files');
       }
 
       const { analysisId } = await response.json();
@@ -117,17 +113,26 @@ const FileUpload = () => {
             clearInterval(interval);
             setProgress(100);
             setProcessing(false);
-            toast({
-              title: "Processing complete",
-              description: "Your files have been analyzed successfully",
-            });
+            
+            // Show summary stats if available
+            if (analysis.summary_stats) {
+              const stats = analysis.summary_stats;
+              toast({
+                title: "Processing complete",
+                description: `Successfully processed ${stats.total_files_processed} files.\nTotal consumption (P1): ${stats.total_consumption_p1.toFixed(2)} kWh\nTotal amount: ${stats.total_amount.toFixed(2)}€`,
+              });
+            } else {
+              toast({
+                title: "Processing complete",
+                description: "Your files have been analyzed successfully. Click 'Download Results' to get your data.",
+              });
+            }
           } else if (analysis.status === 'error') {
             clearInterval(interval);
             setProcessing(false);
             throw new Error(analysis.error || 'Processing failed');
           } else {
-            // Update progress based on status
-            setProgress(50); // You can implement more granular progress updates
+            setProgress(50);
           }
         }
       }, 2000);
@@ -135,7 +140,7 @@ const FileUpload = () => {
       console.error('Error processing files:', error);
       toast({
         title: "Error",
-        description: "Failed to process files. Please try again.",
+        description: error.message || "Failed to process files. Please try again.",
         variant: "destructive",
       });
       setProcessing(false);

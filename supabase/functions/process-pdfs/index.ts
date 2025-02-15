@@ -1,7 +1,7 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1'
-import { load } from "https://deno.land/std@0.204.0/dotenv/mod.ts";
-import { PyPDF2 } from "npm:pypdf2"
+import { PDFDocument } from "https://cdn.skypack.dev/pdf-lib?dts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -9,7 +9,6 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
@@ -30,12 +29,12 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // Upload files to pdfs bucket
+    // Upload files and create initial analysis record
     const uploadPromises = files.map(async (file: any) => {
       const fileName = file.name.replace(/[^\x00-\x7F]/g, '')
       const filePath = `${crypto.randomUUID()}-${fileName}`
 
-      const { data, error: uploadError } = await supabase.storage
+      const { error: uploadError } = await supabase.storage
         .from('pdfs')
         .upload(filePath, file, {
           contentType: 'application/pdf',
@@ -53,7 +52,6 @@ serve(async (req) => {
 
     const uploadedFiles = await Promise.all(uploadPromises)
 
-    // Create analysis record
     const { data: analysis, error: analysisError } = await supabase
       .from('pdf_analysis')
       .insert({
@@ -65,10 +63,9 @@ serve(async (req) => {
 
     if (analysisError) throw analysisError
 
-    // Start background processing
+    // Process PDFs in background
     EdgeRuntime.waitUntil((async () => {
       try {
-        // Process each PDF and collect results
         const processPromises = uploadedFiles.map(async (fileInfo) => {
           const { data: pdfData } = await supabase.storage
             .from('pdfs')
@@ -76,35 +73,39 @@ serve(async (req) => {
 
           if (!pdfData) throw new Error(`Failed to download PDF: ${fileInfo.path}`)
 
-          // Convert Blob to ArrayBuffer for PyPDF2
           const arrayBuffer = await pdfData.arrayBuffer()
+          const pdfDoc = await PDFDocument.load(arrayBuffer)
           
-          // Create a new PDF reader
-          const reader = new PyPDF2.PdfReader(new Uint8Array(arrayBuffer))
-          let url = null
-
-          // Extract links from each page
-          for (let pageNum = 0; pageNum < reader.numPages; pageNum++) {
-            const page = reader.getPage(pageNum)
-            const annotations = page.getAnnotations()
+          let cnmcUrl = null
+          
+          // Extract URLs from each page
+          for (let i = 0; i < pdfDoc.getPageCount(); i++) {
+            const page = pdfDoc.getPage(i)
+            const annotations = page.node.lookup(page.node.get('Annots'), true)
             
-            for (const annot of annotations) {
-              if (annot.url && annot.url.includes('comparador.cnmc.gob.es')) {
-                url = annot.url
-                break
+            if (!annotations) continue
+            
+            for (const annot of annotations.asArray()) {
+              if (annot.get('Subtype')?.value === 'Link') {
+                const action = annot.get('A')
+                const uri = action?.get('URI')?.value
+                if (uri && uri.includes('comparador.cnmc.gob.es')) {
+                  cnmcUrl = uri
+                  break
+                }
               }
             }
-            if (url) break
+            if (cnmcUrl) break
           }
 
-          if (!url) return null
+          if (!cnmcUrl) return null
 
-          // Parse the URL parameters
-          const parsedUrl = new URL(url)
-          const params = Object.fromEntries(parsedUrl.searchParams)
+          // Parse URL parameters
+          const url = new URL(cnmcUrl)
+          const params = Object.fromEntries(url.searchParams)
 
           return {
-            cnmc_url: url,
+            cnmc_url: cnmcUrl,
             postal_code: params.cp,
             contracted_power_p1: parseFloat(params.pP1 || '0'),
             contracted_power_p2: parseFloat(params.pP2 || '0'),
@@ -142,6 +143,22 @@ serve(async (req) => {
 
         const results = (await Promise.all(processPromises)).filter(Boolean)
 
+        if (results.length === 0) {
+          throw new Error('No valid data could be extracted from the PDFs')
+        }
+
+        // Calculate summary statistics
+        const summaryStats = {
+          total_files_processed: results.length,
+          total_consumption_p1: results.reduce((sum, r) => sum + r.consumption_p1, 0),
+          total_amount: results.reduce((sum, r) => sum + r.total_amount, 0),
+          average_monthly_cost: results.reduce((sum, r) => sum + r.total_amount, 0) / results.length,
+          date_range: {
+            start: results.reduce((min, r) => !min || r.billing_start_date < min ? r.billing_start_date : min, ''),
+            end: results.reduce((max, r) => !max || r.billing_end_date > max ? r.billing_end_date : max, '')
+          }
+        }
+
         // Create CSV content
         const csvHeader = Object.keys(results[0]).join(',')
         const csvRows = results.map(row => 
@@ -162,12 +179,13 @@ serve(async (req) => {
 
         if (outputError) throw outputError
 
-        // Update analysis status
+        // Update analysis record with results
         await supabase
           .from('pdf_analysis')
           .update({
             status: 'completed',
-            output_file: outputPath
+            output_file: outputPath,
+            summary_stats: summaryStats
           })
           .eq('id', analysis.id)
 
