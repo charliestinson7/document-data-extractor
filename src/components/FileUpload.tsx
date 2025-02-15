@@ -1,48 +1,18 @@
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { toast } from '../components/ui/use-toast';
-import { Progress } from '../components/ui/progress';
-import { Button } from '../components/ui/button';
+import { Progress } from './ui/progress';
+import { Button } from './ui/button';
 import { Upload, FileText, X, Download } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
-import { Json } from '@/integrations/supabase/types';
+import { useFileAnalysis } from '@/hooks/useFileAnalysis';
 
 interface FileWithPreview extends File {
   preview?: string;
 }
 
-interface SummaryStats {
-  total_files_processed: number;
-  total_consumption_p1: number;
-  total_amount: number;
-  average_monthly_cost: number;
-  date_range: {
-    start: string;
-    end: string;
-  };
-}
-
-interface DatabaseAnalysis {
-  id: string;
-  created_at: string | null;
-  updated_at: string | null;
-  status: string;
-  input_files: Json;
-  output_file: string | null;
-  error: string | null;
-  summary_stats?: SummaryStats | null;
-}
-
-interface Analysis extends DatabaseAnalysis {
-  summary_stats: SummaryStats | null;
-}
-
 const FileUpload = () => {
   const [files, setFiles] = useState<FileWithPreview[]>([]);
-  const [processing, setProcessing] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [currentAnalysis, setCurrentAnalysis] = useState<Analysis | null>(null);
+  const { processing, progress, currentAnalysis, processFiles, downloadResults } = useFileAnalysis();
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles.length > 5) {
@@ -87,167 +57,7 @@ const FileUpload = () => {
     });
   };
 
-  const processFiles = async () => {
-    if (files.length === 0) return;
-
-    setProcessing(true);
-    setProgress(0);
-
-    try {
-      // Convert files to base64 format
-      const filePromises = files.map(async (file) => {
-        return new Promise<{ name: string; type: string; content: string }>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            const base64content = reader.result as string;
-            // Remove the data URL prefix and get just the base64 content
-            const base64 = base64content.split(',')[1];
-            resolve({
-              name: file.name,
-              type: file.type,
-              content: base64
-            });
-          };
-          reader.onerror = () => reject(new Error('Failed to read file'));
-          reader.readAsDataURL(file);
-        });
-      });
-
-      const processedFiles = await Promise.all(filePromises);
-
-      const { data, error: functionError } = await supabase.functions.invoke('process-pdfs', {
-        body: { files: processedFiles }
-      });
-
-      if (functionError) {
-        toast({
-          title: "Error",
-          description: functionError.message || 'Failed to process files',
-          variant: "destructive",
-        });
-        setProcessing(false);
-        return;
-      }
-
-      const { analysisId } = data;
-      
-      // Start polling for status
-      const interval = setInterval(async () => {
-        const { data: dbAnalysis, error } = await supabase
-          .from('pdf_analysis')
-          .select('*')
-          .eq('id', analysisId)
-          .single();
-
-        if (error) {
-          clearInterval(interval);
-          setProcessing(false);
-          toast({
-            title: "Error",
-            description: error.message || 'Failed to check analysis status',
-            variant: "destructive",
-          });
-          return;
-        }
-
-        if (dbAnalysis) {
-          const typedAnalysis: Analysis = {
-            id: dbAnalysis.id,
-            created_at: dbAnalysis.created_at,
-            updated_at: dbAnalysis.updated_at,
-            status: dbAnalysis.status,
-            input_files: dbAnalysis.input_files,
-            output_file: dbAnalysis.output_file,
-            error: dbAnalysis.error,
-            summary_stats: (dbAnalysis as DatabaseAnalysis).summary_stats || null
-          };
-          
-          setCurrentAnalysis(typedAnalysis);
-          
-          if (dbAnalysis.status === 'completed') {
-            clearInterval(interval);
-            setProgress(100);
-            setProcessing(false);
-            
-            // Show summary stats if available
-            if (typedAnalysis.summary_stats) {
-              const stats = typedAnalysis.summary_stats;
-              toast({
-                title: "Processing complete",
-                description: `Successfully processed ${stats.total_files_processed} files.\nTotal consumption (P1): ${stats.total_consumption_p1.toFixed(2)} kWh\nTotal amount: ${stats.total_amount.toFixed(2)}€`,
-              });
-            } else {
-              toast({
-                title: "Processing complete",
-                description: "Your files have been analyzed successfully. Click 'Download Results' to get your data.",
-              });
-            }
-          } else if (dbAnalysis.status === 'error') {
-            clearInterval(interval);
-            setProcessing(false);
-            toast({
-              title: "Error",
-              description: dbAnalysis.error || 'Processing failed',
-              variant: "destructive",
-            });
-          } else {
-            setProgress(50);
-          }
-        }
-      }, 2000);
-    } catch (error) {
-      console.error('Error processing files:', error);
-      toast({
-        title: "Error",
-        description: error?.toString() || 'Failed to process files. Please try again.',
-        variant: "destructive",
-      });
-      setProcessing(false);
-    }
-  };
-
-  const downloadResults = async () => {
-    if (!currentAnalysis?.output_file) return;
-
-    try {
-      const { data, error } = await supabase.storage
-        .from('outputs')
-        .download(currentAnalysis.output_file);
-
-      if (error) {
-        toast({
-          title: "Error",
-          description: error.message || 'Failed to download results',
-          variant: "destructive",
-        });
-        return;
-      }
-
-      // Create download link
-      const url = URL.createObjectURL(data);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'analysis-results.csv';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      toast({
-        title: "Download started",
-        description: "Your results are being downloaded",
-      });
-    } catch (error) {
-      console.error('Error downloading results:', error);
-      toast({
-        title: "Error",
-        description: error?.toString() || 'Failed to download results. Please try again.',
-        variant: "destructive",
-      });
-    }
-  };
-
-  React.useEffect(() => {
+  useEffect(() => {
     return () => {
       files.forEach(file => {
         if (file.preview) {
@@ -307,7 +117,7 @@ const FileUpload = () => {
           ) : (
             <div className="flex space-x-4 animate-slide-down">
               <Button
-                onClick={processFiles}
+                onClick={() => processFiles(files)}
                 className="flex-1"
                 disabled={processing}
               >

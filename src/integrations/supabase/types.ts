@@ -17,6 +17,7 @@ export type Database = {
           input_files: Json
           output_file: string | null
           status: string
+          summary_stats: Json | null
           updated_at: string | null
         }
         Insert: {
@@ -26,6 +27,7 @@ export type Database = {
           input_files: Json
           output_file?: string | null
           status?: string
+          summary_stats?: Json | null
           updated_at?: string | null
         }
         Update: {
@@ -35,6 +37,7 @@ export type Database = {
           input_files?: Json
           output_file?: string | null
           status?: string
+          summary_stats?: Json | null
           updated_at?: string | null
         }
         Relationships: []
