@@ -99,23 +99,13 @@ const FileUpload = () => {
         formData.append('files', file);
       });
 
-      const response = await fetch(
-        'https://oknexztwmsdbpurjbtys.supabase.co/functions/v1/process-pdfs',
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
-          },
-          body: formData
-        }
-      );
+      const { data, error: functionError } = await supabase.functions.invoke('process-pdfs', {
+        body: formData,
+      });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to process files');
-      }
+      if (functionError) throw functionError;
 
-      const { analysisId } = await response.json();
+      const { analysisId } = data;
       
       // Start polling for status
       const interval = setInterval(async () => {
