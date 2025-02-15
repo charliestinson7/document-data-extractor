@@ -120,7 +120,13 @@ const FileUpload = () => {
       });
 
       if (functionError) {
-        throw new Error(functionError.message || 'Failed to process files');
+        toast({
+          title: "Error",
+          description: functionError.message || 'Failed to process files',
+          variant: "destructive",
+        });
+        setProcessing(false);
+        return;
       }
 
       const { analysisId } = data;
@@ -135,7 +141,13 @@ const FileUpload = () => {
 
         if (error) {
           clearInterval(interval);
-          throw new Error(error.message);
+          setProcessing(false);
+          toast({
+            title: "Error",
+            description: error.message || 'Failed to check analysis status',
+            variant: "destructive",
+          });
+          return;
         }
 
         if (dbAnalysis) {
@@ -173,7 +185,11 @@ const FileUpload = () => {
           } else if (dbAnalysis.status === 'error') {
             clearInterval(interval);
             setProcessing(false);
-            throw new Error(dbAnalysis.error || 'Processing failed');
+            toast({
+              title: "Error",
+              description: dbAnalysis.error || 'Processing failed',
+              variant: "destructive",
+            });
           } else {
             setProgress(50);
           }
@@ -181,13 +197,9 @@ const FileUpload = () => {
       }, 2000);
     } catch (error) {
       console.error('Error processing files:', error);
-      const errorMessage = typeof error === 'object' && error !== null && 'message' in error 
-        ? String(error.message)
-        : 'Failed to process files. Please try again.';
-      
       toast({
         title: "Error",
-        description: errorMessage,
+        description: error?.toString() || 'Failed to process files. Please try again.',
         variant: "destructive",
       });
       setProcessing(false);
@@ -203,7 +215,12 @@ const FileUpload = () => {
         .download(currentAnalysis.output_file);
 
       if (error) {
-        throw new Error(error.message);
+        toast({
+          title: "Error",
+          description: error.message || 'Failed to download results',
+          variant: "destructive",
+        });
+        return;
       }
 
       // Create download link
@@ -222,13 +239,9 @@ const FileUpload = () => {
       });
     } catch (error) {
       console.error('Error downloading results:', error);
-      const errorMessage = typeof error === 'object' && error !== null && 'message' in error 
-        ? String(error.message)
-        : 'Failed to download results. Please try again.';
-      
       toast({
         title: "Error",
-        description: errorMessage,
+        description: error?.toString() || 'Failed to download results. Please try again.',
         variant: "destructive",
       });
     }
