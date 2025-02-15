@@ -95,10 +95,16 @@ const FileUpload = () => {
         formData.append('files', file);
       });
 
+      // Get the anon key from the Supabase client
+      const supabaseKey = supabase.supabaseKey;
+
       const response = await fetch(
         'https://oknexztwmsdbpurjbtys.supabase.co/functions/v1/process-pdfs',
         {
           method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${supabaseKey}`
+          },
           body: formData
         }
       );
@@ -124,7 +130,11 @@ const FileUpload = () => {
         }
 
         if (analysis) {
-          setCurrentAnalysis(analysis as Analysis);
+          const typedAnalysis: Analysis = {
+            ...analysis,
+            summary_stats: analysis.summary_stats as SummaryStats | null
+          };
+          setCurrentAnalysis(typedAnalysis);
           
           if (analysis.status === 'completed') {
             clearInterval(interval);
@@ -132,8 +142,8 @@ const FileUpload = () => {
             setProcessing(false);
             
             // Show summary stats if available
-            if (analysis.summary_stats) {
-              const stats = analysis.summary_stats as SummaryStats;
+            if (typedAnalysis.summary_stats) {
+              const stats = typedAnalysis.summary_stats;
               toast({
                 title: "Processing complete",
                 description: `Successfully processed ${stats.total_files_processed} files.\nTotal consumption (P1): ${stats.total_consumption_p1.toFixed(2)} kWh\nTotal amount: ${stats.total_amount.toFixed(2)}€`,
