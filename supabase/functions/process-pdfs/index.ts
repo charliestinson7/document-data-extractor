@@ -1,6 +1,8 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1'
+import { load } from "https://deno.land/std@0.204.0/dotenv/mod.ts";
+import { PyPDF2 } from "npm:pypdf2"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -64,20 +66,83 @@ serve(async (req) => {
 
     if (analysisError) throw analysisError
 
-    // TODO: Add your Python script execution here
-    // For now, we'll simulate processing
-    setTimeout(async () => {
-      const outputPath = `${analysis.id}/result.txt`
-      
-      // Simulate creating output file
-      const { error: outputError } = await supabase.storage
-        .from('outputs')
-        .upload(outputPath, new Blob(['Processed PDF content would go here']), {
-          contentType: 'text/plain',
-          upsert: true
+    // Start background processing
+    EdgeRuntime.waitUntil((async () => {
+      try {
+        // Process each PDF and collect results
+        const processPromises = uploadedFiles.map(async (fileInfo) => {
+          const { data: pdfData } = await supabase.storage
+            .from('pdfs')
+            .download(fileInfo.path)
+
+          if (!pdfData) throw new Error(`Failed to download PDF: ${fileInfo.path}`)
+
+          // Convert Blob to ArrayBuffer for PyPDF2
+          const arrayBuffer = await pdfData.arrayBuffer()
+          
+          // Create a new PDF reader
+          const reader = new PyPDF2.PdfReader(new Uint8Array(arrayBuffer))
+          let url = null
+
+          // Extract links from each page
+          for (let pageNum = 0; pageNum < reader.numPages; pageNum++) {
+            const page = reader.getPage(pageNum)
+            const annotations = page.getAnnotations()
+            
+            for (const annot of annotations) {
+              if (annot.url && annot.url.includes('comparador.cnmc.gob.es')) {
+                url = annot.url
+                break
+              }
+            }
+            if (url) break
+          }
+
+          if (!url) return null
+
+          // Parse the URL parameters
+          const parsedUrl = new URL(url)
+          const params = Object.fromEntries(parsedUrl.searchParams)
+
+          return {
+            cnmc_url: url,
+            postal_code: params.cp,
+            contracted_power_p1: parseFloat(params.pP1 || '0'),
+            contracted_power_p2: parseFloat(params.pP2 || '0'),
+            max_power_p1: parseFloat(params.pmaxP1 || '0'),
+            max_power_p2: parseFloat(params.pmaxP2 || '0'),
+            consumption_p1: parseFloat(params.caP1 || '0'),
+            consumption_p2: parseFloat(params.caP2 || '0'),
+            consumption_p3: parseFloat(params.caP3 || '0'),
+            // ... add other parameters as needed
+            filename: fileInfo.originalName,
+            filepath: fileInfo.path
+          }
         })
 
-      if (!outputError) {
+        const results = (await Promise.all(processPromises)).filter(Boolean)
+
+        // Create CSV content
+        const csvHeader = Object.keys(results[0]).join(',')
+        const csvRows = results.map(row => 
+          Object.values(row).map(value => 
+            typeof value === 'string' ? `"${value}"` : value
+          ).join(',')
+        )
+        const csvContent = [csvHeader, ...csvRows].join('\n')
+
+        // Upload results
+        const outputPath = `${analysis.id}/analysis_results.csv`
+        const { error: outputError } = await supabase.storage
+          .from('outputs')
+          .upload(outputPath, new Blob([csvContent], { type: 'text/csv' }), {
+            contentType: 'text/csv',
+            upsert: true
+          })
+
+        if (outputError) throw outputError
+
+        // Update analysis status
         await supabase
           .from('pdf_analysis')
           .update({
@@ -85,8 +150,18 @@ serve(async (req) => {
             output_file: outputPath
           })
           .eq('id', analysis.id)
+
+      } catch (error) {
+        console.error('Processing error:', error)
+        await supabase
+          .from('pdf_analysis')
+          .update({
+            status: 'error',
+            error: error.message
+          })
+          .eq('id', analysis.id)
       }
-    }, 5000)
+    })())
 
     return new Response(
       JSON.stringify({
