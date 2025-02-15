@@ -14,8 +14,7 @@ serve(async (req) => {
   }
 
   try {
-    const formData = await req.formData()
-    const files = formData.getAll('files')
+    const { files } = await req.json();
 
     if (!files || files.length === 0) {
       return new Response(
@@ -29,14 +28,20 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // Upload files and create initial analysis record
-    const uploadPromises = files.map(async (file: any) => {
-      const fileName = file.name.replace(/[^\x00-\x7F]/g, '')
+    // Convert base64 files to Blob and upload
+    const uploadPromises = files.map(async (fileData: any) => {
+      const binaryString = atob(fileData.content);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      const blob = new Blob([bytes], { type: fileData.type });
+      const fileName = fileData.name.replace(/[^\x00-\x7F]/g, '')
       const filePath = `${crypto.randomUUID()}-${fileName}`
 
       const { error: uploadError } = await supabase.storage
         .from('pdfs')
-        .upload(filePath, file, {
+        .upload(filePath, blob, {
           contentType: 'application/pdf',
           upsert: false
         })
@@ -46,7 +51,7 @@ serve(async (req) => {
       return {
         originalName: fileName,
         path: filePath,
-        size: file.size
+        size: bytes.length
       }
     })
 
