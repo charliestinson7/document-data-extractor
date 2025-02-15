@@ -49,6 +49,12 @@ serve(async (req) => {
     // Process each analysis in the background
     EdgeRuntime.waitUntil((async () => {
       try {
+        let processedFiles = 0;
+        let failedFiles = 0;
+        let skippedFiles = 0;
+        let totalConsumption = 0;
+        let totalAmount = 0;
+
         const processPromises = analyses.map(async (analysis) => {
           try {
             // Download PDF from storage
@@ -60,12 +66,13 @@ serve(async (req) => {
               throw new Error(`Failed to download PDF: ${downloadError?.message || 'No data'}`);
             }
 
-            console.log('Downloaded PDF:', analysis.file_name);
+            console.log('Processing PDF:', analysis.file_name);
 
             const arrayBuffer = await pdfData.arrayBuffer();
             const pdfDoc = await PDFDocument.load(arrayBuffer);
             
             let cnmcUrl = null;
+            let foundUrls = [];
             
             // Extract URLs from each page
             for (let i = 0; i < pdfDoc.getPageCount(); i++) {
@@ -78,16 +85,23 @@ serve(async (req) => {
                 if (annot.get('Subtype')?.value === 'Link') {
                   const action = annot.get('A');
                   const uri = action?.get('URI')?.value;
-                  if (uri && uri.includes('comparador.cnmc.gob.es')) {
-                    cnmcUrl = uri;
-                    break;
+                  if (uri) {
+                    foundUrls.push(uri);
+                    if (uri.includes('comparador.cnmc.gob.es')) {
+                      cnmcUrl = uri;
+                      break;
+                    }
                   }
                 }
               }
               if (cnmcUrl) break;
             }
 
+            console.log('Found URLs:', foundUrls);
+
             if (!cnmcUrl) {
+              console.log('No CNMC URL found in PDF:', analysis.file_name);
+              skippedFiles++;
               throw new Error('No CNMC URL found in PDF');
             }
 
@@ -131,6 +145,12 @@ serve(async (req) => {
               has_permanence: params.finPen !== '0000-00-00'
             };
 
+            console.log('Parsed results:', results);
+
+            // Update running totals
+            totalConsumption += results.consumption_p1 + results.consumption_p2 + results.consumption_p3;
+            totalAmount += results.total_amount;
+
             // Create CSV content
             const csvHeader = Object.keys(results).join(',');
             const csvRow = Object.values(results).map(value => 
@@ -153,7 +173,7 @@ serve(async (req) => {
 
             console.log('Uploaded results for:', analysis.file_name);
 
-            // Update analysis record
+            // Update analysis record with more detailed stats
             await supabase
               .from('pdf_analysis')
               .update({
@@ -166,25 +186,59 @@ serve(async (req) => {
                   billing_period: {
                     start: results.billing_start_date,
                     end: results.billing_end_date
+                  },
+                  consumption_details: {
+                    p1: results.consumption_p1,
+                    p2: results.consumption_p2,
+                    p3: results.consumption_p3
+                  },
+                  power_details: {
+                    contracted_p1: results.contracted_power_p1,
+                    contracted_p2: results.contracted_power_p2,
+                    max_p1: results.max_power_p1,
+                    max_p2: results.max_power_p2
+                  },
+                  costs_breakdown: {
+                    power: results.power_cost,
+                    energy: results.energy_cost,
+                    additional_services: results.additional_services_cost,
+                    other_with_tax: results.other_costs_with_tax,
+                    other_without_tax: results.other_costs_without_tax,
+                    discount: results.discount
                   }
                 }
               })
               .eq('id', analysis.id);
 
+            processedFiles++;
+
           } catch (error) {
             console.error(`Error processing ${analysis.file_name}:`, error);
+            failedFiles++;
             await supabase
               .from('pdf_analysis')
               .update({
                 status: 'error',
-                error: error.message
+                error: error.message,
+                summary_stats: {
+                  error_details: error.message,
+                  processed_at: new Date().toISOString()
+                }
               })
               .eq('id', analysis.id);
           }
         });
 
         await Promise.all(processPromises);
-        console.log('All analyses processed');
+
+        // Log summary statistics
+        console.log('\nProcessing Summary:');
+        console.log(`Files processed successfully: ${processedFiles}`);
+        console.log(`Files with errors: ${failedFiles}`);
+        console.log(`Files without CNMC URL: ${skippedFiles}`);
+        console.log(`Total consumption: ${totalConsumption.toFixed(2)} kWh`);
+        console.log(`Total amount: ${totalAmount.toFixed(2)}€`);
+        console.log(`Average cost per file: ${(totalAmount / processedFiles).toFixed(2)}€`);
 
       } catch (error) {
         console.error('Background processing error:', error);
