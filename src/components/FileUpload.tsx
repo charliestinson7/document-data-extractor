@@ -23,7 +23,7 @@ interface SummaryStats {
   };
 }
 
-interface Analysis {
+interface DatabaseAnalysis {
   id: string;
   created_at: string | null;
   updated_at: string | null;
@@ -31,6 +31,10 @@ interface Analysis {
   input_files: Json;
   output_file: string | null;
   error: string | null;
+  summary_stats?: SummaryStats | null;
+}
+
+interface Analysis extends DatabaseAnalysis {
   summary_stats: SummaryStats | null;
 }
 
@@ -115,7 +119,7 @@ const FileUpload = () => {
       
       // Start polling for status
       const interval = setInterval(async () => {
-        const { data: analysis, error } = await supabase
+        const { data: dbAnalysis, error } = await supabase
           .from('pdf_analysis')
           .select('*')
           .eq('id', analysisId)
@@ -126,21 +130,21 @@ const FileUpload = () => {
           throw error;
         }
 
-        if (analysis) {
+        if (dbAnalysis) {
           const typedAnalysis: Analysis = {
-            id: analysis.id,
-            created_at: analysis.created_at,
-            updated_at: analysis.updated_at,
-            status: analysis.status,
-            input_files: analysis.input_files,
-            output_file: analysis.output_file,
-            error: analysis.error,
-            summary_stats: analysis.summary_stats as SummaryStats | null
+            id: dbAnalysis.id,
+            created_at: dbAnalysis.created_at,
+            updated_at: dbAnalysis.updated_at,
+            status: dbAnalysis.status,
+            input_files: dbAnalysis.input_files,
+            output_file: dbAnalysis.output_file,
+            error: dbAnalysis.error,
+            summary_stats: (dbAnalysis as DatabaseAnalysis).summary_stats || null
           };
           
           setCurrentAnalysis(typedAnalysis);
           
-          if (analysis.status === 'completed') {
+          if (dbAnalysis.status === 'completed') {
             clearInterval(interval);
             setProgress(100);
             setProcessing(false);
@@ -158,10 +162,10 @@ const FileUpload = () => {
                 description: "Your files have been analyzed successfully. Click 'Download Results' to get your data.",
               });
             }
-          } else if (analysis.status === 'error') {
+          } else if (dbAnalysis.status === 'error') {
             clearInterval(interval);
             setProcessing(false);
-            throw new Error(analysis.error || 'Processing failed');
+            throw new Error(dbAnalysis.error || 'Processing failed');
           } else {
             setProgress(50);
           }
