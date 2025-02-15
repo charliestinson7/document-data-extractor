@@ -93,13 +93,30 @@ const FileUpload = () => {
     setProgress(0);
 
     try {
-      const formData = new FormData();
-      files.forEach(file => {
-        formData.append('files', file);
+      // Convert files to base64 strings
+      const filePromises = files.map(file => {
+        return new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const base64String = (reader.result as string)
+              .replace('data:', '')
+              .replace(/^.+,/, '');
+            resolve(base64String);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
       });
 
+      const base64Files = await Promise.all(filePromises);
+      const filesData = files.map((file, index) => ({
+        name: file.name,
+        type: file.type,
+        content: base64Files[index]
+      }));
+
       const { data, error: functionError } = await supabase.functions.invoke('process-pdfs', {
-        body: formData,
+        body: { files: filesData }
       });
 
       if (functionError) throw functionError;
