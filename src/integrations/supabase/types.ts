@@ -13,31 +13,43 @@ export type Database = {
         Row: {
           created_at: string | null
           error: string | null
+          file_name: string | null
+          file_path: string | null
           id: string
           input_files: Json
-          output_file: string | null
+          output_path: string | null
+          page_count: number | null
           status: string
           summary_stats: Json | null
+          total_size: number | null
           updated_at: string | null
         }
         Insert: {
           created_at?: string | null
           error?: string | null
+          file_name?: string | null
+          file_path?: string | null
           id?: string
           input_files: Json
-          output_file?: string | null
+          output_path?: string | null
+          page_count?: number | null
           status?: string
           summary_stats?: Json | null
+          total_size?: number | null
           updated_at?: string | null
         }
         Update: {
           created_at?: string | null
           error?: string | null
+          file_name?: string | null
+          file_path?: string | null
           id?: string
           input_files?: Json
-          output_file?: string | null
+          output_path?: string | null
+          page_count?: number | null
           status?: string
           summary_stats?: Json | null
+          total_size?: number | null
           updated_at?: string | null
         }
         Relationships: []

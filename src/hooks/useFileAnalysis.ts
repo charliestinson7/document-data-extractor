@@ -7,13 +7,15 @@ import { toast } from '@/components/ui/use-toast';
 interface Analysis {
   id: string;
   created_at: string | null;
+  input_files: any;
+  status: string;
+  error: string | null;
   file_name: string;
   file_path: string;
   output_path: string | null;
-  status: string;
-  error: string | null;
   page_count: number | null;
   total_size: number | null;
+  summary_stats: any | null;
 }
 
 export function useFileAnalysis() {
@@ -46,6 +48,7 @@ export function useFileAnalysis() {
         const { data: analysis, error: dbError } = await supabase
           .from('pdf_analysis')
           .insert({
+            input_files: [{ name: file.name, path: filePath, size: file.size }],
             file_name: file.name,
             file_path: filePath,
             status: 'pending',

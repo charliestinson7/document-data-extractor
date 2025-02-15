@@ -1,3 +1,4 @@
+
 import React, { useCallback, useState, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Progress } from './ui/progress';
@@ -123,7 +124,7 @@ const FileUpload = () => {
               >
                 Process Files
               </Button>
-              {currentAnalysis?.output_file && (
+              {currentAnalysis?.output_path && (
                 <Button
                   variant="outline"
                   className="flex items-center space-x-2"
