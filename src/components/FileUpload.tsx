@@ -108,7 +108,7 @@ const FileUpload = () => {
               content: base64
             });
           };
-          reader.onerror = (error) => reject(error || new Error('Failed to read file'));
+          reader.onerror = () => reject(new Error('Failed to read file'));
           reader.readAsDataURL(file);
         });
       });
@@ -119,7 +119,9 @@ const FileUpload = () => {
         body: { files: processedFiles }
       });
 
-      if (functionError) throw functionError;
+      if (functionError) {
+        throw new Error(functionError.message || 'Failed to process files');
+      }
 
       const { analysisId } = data;
       
@@ -133,7 +135,7 @@ const FileUpload = () => {
 
         if (error) {
           clearInterval(interval);
-          throw error;
+          throw new Error(error.message);
         }
 
         if (dbAnalysis) {
@@ -179,7 +181,10 @@ const FileUpload = () => {
       }, 2000);
     } catch (error) {
       console.error('Error processing files:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to process files. Please try again.';
+      const errorMessage = typeof error === 'object' && error !== null && 'message' in error 
+        ? String(error.message)
+        : 'Failed to process files. Please try again.';
+      
       toast({
         title: "Error",
         description: errorMessage,
@@ -197,7 +202,9 @@ const FileUpload = () => {
         .from('outputs')
         .download(currentAnalysis.output_file);
 
-      if (error) throw error;
+      if (error) {
+        throw new Error(error.message);
+      }
 
       // Create download link
       const url = URL.createObjectURL(data);
@@ -215,7 +222,10 @@ const FileUpload = () => {
       });
     } catch (error) {
       console.error('Error downloading results:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to download results. Please try again.';
+      const errorMessage = typeof error === 'object' && error !== null && 'message' in error 
+        ? String(error.message)
+        : 'Failed to download results. Please try again.';
+      
       toast({
         title: "Error",
         description: errorMessage,
