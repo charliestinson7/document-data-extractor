@@ -3,57 +3,17 @@ import { useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { getErrorMessage } from '@/utils/errorHandling';
 import { toast } from '@/components/ui/use-toast';
-import { Json } from '@/integrations/supabase/types';
-
-interface SummaryStats {
-  total_files_processed: number;
-  total_consumption_p1: number;
-  total_amount: number;
-  average_monthly_cost: number;
-  date_range: {
-    start: string;
-    end: string;
-  };
-}
 
 interface Analysis {
   id: string;
   created_at: string | null;
-  updated_at: string | null;
+  file_name: string;
+  file_path: string;
+  output_path: string | null;
   status: string;
-  input_files: Json;
-  output_file: string | null;
   error: string | null;
-  summary_stats: SummaryStats | null;
-}
-
-interface DatabaseAnalysis {
-  id: string;
-  created_at: string | null;
-  updated_at: string | null;
-  status: string;
-  input_files: Json;
-  output_file: string | null;
-  error: string | null;
-  summary_stats: Json | null;
-}
-
-// Changed return type to be more specific about the shape
-function isSummaryStats(data: Json): data is { [K in keyof SummaryStats]: Json } {
-  if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
-  
-  const stats = data as Record<string, unknown>;
-  return (
-    typeof stats.total_files_processed === 'number' &&
-    typeof stats.total_consumption_p1 === 'number' &&
-    typeof stats.total_amount === 'number' &&
-    typeof stats.average_monthly_cost === 'number' &&
-    typeof stats.date_range === 'object' &&
-    stats.date_range !== null &&
-    !Array.isArray(stats.date_range) &&
-    typeof (stats.date_range as any).start === 'string' &&
-    typeof (stats.date_range as any).end === 'string'
-  );
+  page_count: number | null;
+  total_size: number | null;
 }
 
 export function useFileAnalysis() {
@@ -71,30 +31,44 @@ export function useFileAnalysis() {
       console.log('Starting file processing...');
 
       const filePromises = files.map(async (file) => {
-        return new Promise<{ name: string; type: string; content: string }>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            const base64content = reader.result as string;
-            const base64 = base64content.split(',')[1];
-            resolve({
-              name: file.name,
-              type: file.type,
-              content: base64
-            });
-          };
-          reader.onerror = (error) => {
-            console.error('FileReader error:', error);
-            reject(new Error('Failed to read file'));
-          };
-          reader.readAsDataURL(file);
-        });
+        const filePath = `${crypto.randomUUID()}-${file.name.replace(/[^\x00-\x7F]/g, '')}`;
+
+        // Upload file to storage
+        const { error: uploadError } = await supabase.storage
+          .from('pdfs')
+          .upload(filePath, file);
+
+        if (uploadError) {
+          throw new Error(`Failed to upload file: ${uploadError.message}`);
+        }
+
+        // Create analysis record
+        const { data: analysis, error: dbError } = await supabase
+          .from('pdf_analysis')
+          .insert({
+            file_name: file.name,
+            file_path: filePath,
+            status: 'pending',
+            total_size: file.size
+          })
+          .select()
+          .single();
+
+        if (dbError) {
+          throw new Error(`Failed to create analysis record: ${dbError.message}`);
+        }
+
+        return analysis;
       });
 
-      const processedFiles = await Promise.all(filePromises);
-      console.log('Files converted to base64');
+      const analysisResults = await Promise.all(filePromises);
+      const firstAnalysis = analysisResults[0];
+      setCurrentAnalysis(firstAnalysis);
 
-      const { data, error: functionError } = await supabase.functions.invoke('process-pdfs', {
-        body: { files: processedFiles }
+      console.log('Files uploaded, calling process-pdfs function...');
+
+      const { data: functionData, error: functionError } = await supabase.functions.invoke('process-pdfs', {
+        body: { analysisIds: analysisResults.map(a => a.id) }
       });
 
       if (functionError) {
@@ -108,8 +82,7 @@ export function useFileAnalysis() {
         return;
       }
 
-      console.log('Edge function response:', data);
-      const { analysisId } = data;
+      console.log('Edge function response:', functionData);
 
       const pollingInterval = setInterval(async () => {
         try {
@@ -117,7 +90,7 @@ export function useFileAnalysis() {
           const { data: dbAnalysis, error } = await supabase
             .from('pdf_analysis')
             .select('*')
-            .eq('id', analysisId)
+            .eq('id', firstAnalysis.id)
             .single();
 
           if (error) {
@@ -134,34 +107,16 @@ export function useFileAnalysis() {
 
           if (dbAnalysis) {
             console.log('Analysis status:', dbAnalysis.status);
-            
-            // Safely convert database analysis to our type
-            const typedAnalysis: Analysis = {
-              ...dbAnalysis,
-              summary_stats: dbAnalysis.summary_stats && isSummaryStats(dbAnalysis.summary_stats) 
-                ? dbAnalysis.summary_stats as unknown as SummaryStats 
-                : null
-            };
-            
-            setCurrentAnalysis(typedAnalysis);
+            setCurrentAnalysis(dbAnalysis);
 
             if (dbAnalysis.status === 'completed') {
               clearInterval(pollingInterval);
               setProgress(100);
               setProcessing(false);
-
-              if (typedAnalysis.summary_stats) {
-                const stats = typedAnalysis.summary_stats;
-                toast({
-                  title: "Processing complete",
-                  description: `Successfully processed ${stats.total_files_processed} files.\nTotal consumption (P1): ${stats.total_consumption_p1.toFixed(2)} kWh\nTotal amount: ${stats.total_amount.toFixed(2)}€`,
-                });
-              } else {
-                toast({
-                  title: "Processing complete",
-                  description: "Your files have been analyzed successfully. Click 'Download Results' to get your data.",
-                });
-              }
+              toast({
+                title: "Processing complete",
+                description: `Successfully processed ${dbAnalysis.page_count || 0} pages.\nTotal size: ${(dbAnalysis.total_size / 1024 / 1024).toFixed(2)} MB`,
+              });
             } else if (dbAnalysis.status === 'error') {
               clearInterval(pollingInterval);
               setProcessing(false);
@@ -195,13 +150,13 @@ export function useFileAnalysis() {
   };
 
   const downloadResults = async () => {
-    if (!currentAnalysis?.output_file) return;
+    if (!currentAnalysis?.output_path) return;
 
     try {
       console.log('Starting download...');
       const { data, error } = await supabase.storage
         .from('outputs')
-        .download(currentAnalysis.output_file);
+        .download(currentAnalysis.output_path);
 
       if (error) {
         console.error('Download error:', error);
@@ -216,7 +171,7 @@ export function useFileAnalysis() {
       const url = URL.createObjectURL(data);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'analysis-results.csv';
+      a.download = `${currentAnalysis.file_name}-analysis.csv`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
