@@ -1,3 +1,4 @@
+
 import React, { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { toast } from '../components/ui/use-toast';
@@ -93,30 +94,18 @@ const FileUpload = () => {
     setProgress(0);
 
     try {
-      // Convert files to base64 strings
-      const filePromises = files.map(file => {
-        return new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            const base64String = (reader.result as string)
-              .replace('data:', '')
-              .replace(/^.+,/, '');
-            resolve(base64String);
-          };
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
+      // Create a FormData object
+      const formData = new FormData();
+      files.forEach((file) => {
+        formData.append('files', file);
       });
 
-      const base64Files = await Promise.all(filePromises);
-      const filesData = files.map((file, index) => ({
-        name: file.name,
-        type: file.type,
-        content: base64Files[index]
-      }));
-
       const { data, error: functionError } = await supabase.functions.invoke('process-pdfs', {
-        body: { files: filesData }
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+        },
+        body: formData,
       });
 
       if (functionError) throw functionError;
