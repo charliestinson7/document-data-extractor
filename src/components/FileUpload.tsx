@@ -1,19 +1,27 @@
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { toast } from '../components/ui/use-toast';
 import { Progress } from '../components/ui/progress';
 import { Button } from '../components/ui/button';
 import { Upload, FileText, X, Download } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 
 interface FileWithPreview extends File {
   preview?: string;
+}
+
+interface Analysis {
+  id: string;
+  status: string;
+  output_file: string | null;
 }
 
 const FileUpload = () => {
   const [files, setFiles] = useState<FileWithPreview[]>([]);
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [currentAnalysis, setCurrentAnalysis] = useState<Analysis | null>(null);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles.length > 5) {
@@ -59,26 +67,122 @@ const FileUpload = () => {
   };
 
   const processFiles = async () => {
+    if (files.length === 0) return;
+
     setProcessing(true);
     setProgress(0);
-    
-    // Simulate processing with progress
-    const totalSteps = 100;
-    const interval = setInterval(() => {
-      setProgress(prev => {
-        if (prev >= totalSteps) {
-          clearInterval(interval);
-          setProcessing(false);
-          toast({
-            title: "Processing complete",
-            description: "Your files have been analyzed successfully",
-          });
-          return prev;
-        }
-        return prev + 1;
+
+    try {
+      const formData = new FormData();
+      files.forEach(file => {
+        formData.append('files', file);
       });
-    }, 50);
+
+      const response = await fetch(
+        'https://oknexztwmsdbpurjbtys.supabase.co/functions/v1/process-pdfs',
+        {
+          method: 'POST',
+          body: formData,
+          headers: {
+            'Authorization': `Bearer ${supabase.auth.session()?.access_token}`
+          }
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to process files');
+      }
+
+      const { analysisId } = await response.json();
+      
+      // Start polling for status
+      const interval = setInterval(async () => {
+        const { data: analysis, error } = await supabase
+          .from('pdf_analysis')
+          .select('*')
+          .eq('id', analysisId)
+          .single();
+
+        if (error) {
+          clearInterval(interval);
+          throw error;
+        }
+
+        if (analysis) {
+          setCurrentAnalysis(analysis);
+          
+          if (analysis.status === 'completed') {
+            clearInterval(interval);
+            setProgress(100);
+            setProcessing(false);
+            toast({
+              title: "Processing complete",
+              description: "Your files have been analyzed successfully",
+            });
+          } else if (analysis.status === 'error') {
+            clearInterval(interval);
+            setProcessing(false);
+            throw new Error(analysis.error || 'Processing failed');
+          } else {
+            // Update progress based on status
+            setProgress(50); // You can implement more granular progress updates
+          }
+        }
+      }, 2000);
+    } catch (error) {
+      console.error('Error processing files:', error);
+      toast({
+        title: "Error",
+        description: "Failed to process files. Please try again.",
+        variant: "destructive",
+      });
+      setProcessing(false);
+    }
   };
+
+  const downloadResults = async () => {
+    if (!currentAnalysis?.output_file) return;
+
+    try {
+      const { data, error } = await supabase.storage
+        .from('outputs')
+        .download(currentAnalysis.output_file);
+
+      if (error) throw error;
+
+      // Create download link
+      const url = URL.createObjectURL(data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'analysis-result.txt';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast({
+        title: "Download started",
+        description: "Your results are being downloaded",
+      });
+    } catch (error) {
+      console.error('Error downloading results:', error);
+      toast({
+        title: "Error",
+        description: "Failed to download results. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      files.forEach(file => {
+        if (file.preview) {
+          URL.revokeObjectURL(file.preview);
+        }
+      });
+    };
+  }, [files]);
 
   return (
     <div className="w-full max-w-3xl mx-auto p-8 space-y-8 animate-fade-in">
@@ -136,16 +240,11 @@ const FileUpload = () => {
               >
                 Process Files
               </Button>
-              {progress === 100 && (
+              {currentAnalysis?.output_file && (
                 <Button
                   variant="outline"
                   className="flex items-center space-x-2"
-                  onClick={() => {
-                    toast({
-                      title: "Download started",
-                      description: "Your results are being downloaded",
-                    });
-                  }}
+                  onClick={downloadResults}
                 >
                   <Download className="h-4 w-4" />
                   <span>Download Results</span>
