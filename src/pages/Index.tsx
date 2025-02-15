@@ -1,7 +1,7 @@
-
+import { FC } from "react";
 import FileUpload from "../components/FileUpload";
 
-const Index = () => {
+const Index: FC = () => {
   return (
     <div className="min-h-screen bg-background">
       <div className="container py-12">
