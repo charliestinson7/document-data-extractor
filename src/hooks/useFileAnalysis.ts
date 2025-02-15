@@ -38,6 +38,23 @@ interface DatabaseAnalysis {
   summary_stats: Json | null;
 }
 
+function isSummaryStats(data: Json): data is SummaryStats {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
+  
+  const stats = data as Record<string, unknown>;
+  return (
+    typeof stats.total_files_processed === 'number' &&
+    typeof stats.total_consumption_p1 === 'number' &&
+    typeof stats.total_amount === 'number' &&
+    typeof stats.average_monthly_cost === 'number' &&
+    typeof stats.date_range === 'object' &&
+    stats.date_range !== null &&
+    !Array.isArray(stats.date_range) &&
+    typeof (stats.date_range as any).start === 'string' &&
+    typeof (stats.date_range as any).end === 'string'
+  );
+}
+
 export function useFileAnalysis() {
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -116,9 +133,13 @@ export function useFileAnalysis() {
 
           if (dbAnalysis) {
             console.log('Analysis status:', dbAnalysis.status);
+            
+            // Safely convert database analysis to our type
             const typedAnalysis: Analysis = {
               ...dbAnalysis,
-              summary_stats: dbAnalysis.summary_stats as SummaryStats | null
+              summary_stats: dbAnalysis.summary_stats && isSummaryStats(dbAnalysis.summary_stats) 
+                ? dbAnalysis.summary_stats 
+                : null
             };
             
             setCurrentAnalysis(typedAnalysis);
