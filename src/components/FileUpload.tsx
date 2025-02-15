@@ -95,15 +95,12 @@ const FileUpload = () => {
         formData.append('files', file);
       });
 
-      // Get the anon key from the Supabase client
-      const supabaseKey = supabase.supabaseKey;
-
       const response = await fetch(
         'https://oknexztwmsdbpurjbtys.supabase.co/functions/v1/process-pdfs',
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${supabaseKey}`
+            'Authorization': `Bearer ${process.env.VITE_SUPABASE_ANON_KEY}`
           },
           body: formData
         }
@@ -131,9 +128,16 @@ const FileUpload = () => {
 
         if (analysis) {
           const typedAnalysis: Analysis = {
-            ...analysis,
+            id: analysis.id,
+            created_at: analysis.created_at,
+            updated_at: analysis.updated_at,
+            status: analysis.status,
+            input_files: analysis.input_files,
+            output_file: analysis.output_file,
+            error: analysis.error,
             summary_stats: analysis.summary_stats as SummaryStats | null
           };
+          
           setCurrentAnalysis(typedAnalysis);
           
           if (analysis.status === 'completed') {
@@ -163,11 +167,11 @@ const FileUpload = () => {
           }
         }
       }, 2000);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error processing files:', error);
       toast({
         title: "Error",
-        description: error.message || "Failed to process files. Please try again.",
+        description: error?.message || "Failed to process files. Please try again.",
         variant: "destructive",
       });
       setProcessing(false);
@@ -198,11 +202,11 @@ const FileUpload = () => {
         title: "Download started",
         description: "Your results are being downloaded",
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error downloading results:', error);
       toast({
         title: "Error",
-        description: "Failed to download results. Please try again.",
+        description: error?.message || "Failed to download results. Please try again.",
         variant: "destructive",
       });
     }
