@@ -108,7 +108,7 @@ const FileUpload = () => {
               content: base64
             });
           };
-          reader.onerror = () => reject(new Error('Failed to read file'));
+          reader.onerror = (error) => reject(error || new Error('Failed to read file'));
           reader.readAsDataURL(file);
         });
       });
@@ -116,7 +116,7 @@ const FileUpload = () => {
       const processedFiles = await Promise.all(filePromises);
 
       const { data, error: functionError } = await supabase.functions.invoke('process-pdfs', {
-        body: JSON.stringify({ files: processedFiles })
+        body: { files: processedFiles }
       });
 
       if (functionError) throw functionError;
@@ -177,11 +177,12 @@ const FileUpload = () => {
           }
         }
       }, 2000);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error processing files:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to process files. Please try again.';
       toast({
         title: "Error",
-        description: error?.message || "Failed to process files. Please try again.",
+        description: errorMessage,
         variant: "destructive",
       });
       setProcessing(false);
@@ -212,11 +213,12 @@ const FileUpload = () => {
         title: "Download started",
         description: "Your results are being downloaded",
       });
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error downloading results:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to download results. Please try again.';
       toast({
         title: "Error",
-        description: error?.message || "Failed to download results. Please try again.",
+        description: errorMessage,
         variant: "destructive",
       });
     }
