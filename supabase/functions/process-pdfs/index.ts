@@ -1,6 +1,6 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1'
+import { load } from "https://deno.land/std@0.204.0/dotenv/mod.ts";
 import { PyPDF2 } from "npm:pypdf2"
 
 const corsHeaders = {
@@ -141,10 +141,6 @@ serve(async (req) => {
         })
 
         const results = (await Promise.all(processPromises)).filter(Boolean)
-
-        if (results.length === 0) {
-          throw new Error('No valid data could be extracted from the PDFs')
-        }
 
         // Create CSV content
         const csvHeader = Object.keys(results[0]).join(',')

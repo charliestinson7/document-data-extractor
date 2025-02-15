@@ -1,7 +1,7 @@
-import { FC } from "react";
+
 import FileUpload from "../components/FileUpload";
 
-const Index: FC = () => {
+const Index = () => {
   return (
     <div className="min-h-screen bg-background">
       <div className="container py-12">
@@ -10,7 +10,7 @@ const Index: FC = () => {
             PDF Document Analyzer
           </h1>
           <p className="text-secondary max-w-md mx-auto animate-fade-in">
-            Upload up to 6 PDF files and receive detailed analysis of their contents
+            Upload up to 5 PDF files and receive detailed analysis of their contents
           </p>
         </div>
         <FileUpload />

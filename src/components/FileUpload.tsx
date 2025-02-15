@@ -1,5 +1,4 @@
-
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { toast } from '../components/ui/use-toast';
 import { Progress } from '../components/ui/progress';
@@ -78,17 +77,22 @@ const FileUpload = () => {
         formData.append('files', file);
       });
 
+      // Get the current session
+      const { data: { session } } = await supabase.auth.getSession();
+
       const response = await fetch(
         'https://oknexztwmsdbpurjbtys.supabase.co/functions/v1/process-pdfs',
         {
           method: 'POST',
-          body: formData
+          body: formData,
+          headers: {
+            'Authorization': `Bearer ${session?.access_token}`
+          }
         }
       );
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to process files');
+        throw new Error('Failed to process files');
       }
 
       const { analysisId } = await response.json();
@@ -115,14 +119,15 @@ const FileUpload = () => {
             setProcessing(false);
             toast({
               title: "Processing complete",
-              description: "Your files have been analyzed successfully. Click 'Download Results' to get your data.",
+              description: "Your files have been analyzed successfully",
             });
           } else if (analysis.status === 'error') {
             clearInterval(interval);
             setProcessing(false);
             throw new Error(analysis.error || 'Processing failed');
           } else {
-            setProgress(50);
+            // Update progress based on status
+            setProgress(50); // You can implement more granular progress updates
           }
         }
       }, 2000);
@@ -130,7 +135,7 @@ const FileUpload = () => {
       console.error('Error processing files:', error);
       toast({
         title: "Error",
-        description: error.message || "Failed to process files. Please try again.",
+        description: "Failed to process files. Please try again.",
         variant: "destructive",
       });
       setProcessing(false);
@@ -151,7 +156,7 @@ const FileUpload = () => {
       const url = URL.createObjectURL(data);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'analysis-results.csv';
+      a.download = 'analysis-result.txt';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -171,7 +176,7 @@ const FileUpload = () => {
     }
   };
 
-  React.useEffect(() => {
+  useEffect(() => {
     return () => {
       files.forEach(file => {
         if (file.preview) {
