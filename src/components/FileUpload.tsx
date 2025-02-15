@@ -1,3 +1,4 @@
+
 import React, { useCallback, useState, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { toast } from '../components/ui/use-toast';
@@ -78,7 +79,17 @@ const FileUpload = () => {
       });
 
       // Get the current session
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+      if (sessionError || !session) {
+        toast({
+          title: "Authentication Error",
+          description: "Please log in to process files",
+          variant: "destructive",
+        });
+        setProcessing(false);
+        return;
+      }
 
       const response = await fetch(
         'https://oknexztwmsdbpurjbtys.supabase.co/functions/v1/process-pdfs',
@@ -86,13 +97,14 @@ const FileUpload = () => {
           method: 'POST',
           body: formData,
           headers: {
-            'Authorization': `Bearer ${session?.access_token}`
+            'Authorization': `Bearer ${session.access_token}`
           }
         }
       );
 
       if (!response.ok) {
-        throw new Error('Failed to process files');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to process files');
       }
 
       const { analysisId } = await response.json();
@@ -126,8 +138,7 @@ const FileUpload = () => {
             setProcessing(false);
             throw new Error(analysis.error || 'Processing failed');
           } else {
-            // Update progress based on status
-            setProgress(50); // You can implement more granular progress updates
+            setProgress(50);
           }
         }
       }, 2000);
@@ -135,7 +146,7 @@ const FileUpload = () => {
       console.error('Error processing files:', error);
       toast({
         title: "Error",
-        description: "Failed to process files. Please try again.",
+        description: error.message || "Failed to process files. Please try again.",
         variant: "destructive",
       });
       setProcessing(false);
