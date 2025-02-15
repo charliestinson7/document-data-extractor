@@ -1,20 +1,37 @@
-import React, { useCallback, useState, useEffect } from 'react';
+
+import React, { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { toast } from '../components/ui/use-toast';
 import { Progress } from '../components/ui/progress';
 import { Button } from '../components/ui/button';
 import { Upload, FileText, X, Download } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { Json } from '@/integrations/supabase/types';
 
 interface FileWithPreview extends File {
   preview?: string;
 }
 
+interface SummaryStats {
+  total_files_processed: number;
+  total_consumption_p1: number;
+  total_amount: number;
+  average_monthly_cost: number;
+  date_range: {
+    start: string;
+    end: string;
+  };
+}
+
 interface Analysis {
   id: string;
+  created_at: string | null;
+  updated_at: string | null;
   status: string;
+  input_files: Json;
   output_file: string | null;
-  summary_stats: any;
+  error: string | null;
+  summary_stats: SummaryStats | null;
 }
 
 const FileUpload = () => {
@@ -107,7 +124,7 @@ const FileUpload = () => {
         }
 
         if (analysis) {
-          setCurrentAnalysis(analysis);
+          setCurrentAnalysis(analysis as Analysis);
           
           if (analysis.status === 'completed') {
             clearInterval(interval);
@@ -116,7 +133,7 @@ const FileUpload = () => {
             
             // Show summary stats if available
             if (analysis.summary_stats) {
-              const stats = analysis.summary_stats;
+              const stats = analysis.summary_stats as SummaryStats;
               toast({
                 title: "Processing complete",
                 description: `Successfully processed ${stats.total_files_processed} files.\nTotal consumption (P1): ${stats.total_consumption_p1.toFixed(2)} kWh\nTotal amount: ${stats.total_amount.toFixed(2)}€`,
@@ -161,7 +178,7 @@ const FileUpload = () => {
       const url = URL.createObjectURL(data);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'analysis-result.txt';
+      a.download = 'analysis-results.csv';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -181,7 +198,7 @@ const FileUpload = () => {
     }
   };
 
-  useEffect(() => {
+  React.useEffect(() => {
     return () => {
       files.forEach(file => {
         if (file.preview) {
