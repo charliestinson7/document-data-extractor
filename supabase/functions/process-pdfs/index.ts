@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1'
 import { load } from "https://deno.land/std@0.204.0/dotenv/mod.ts";
@@ -114,7 +113,28 @@ serve(async (req) => {
             consumption_p1: parseFloat(params.caP1 || '0'),
             consumption_p2: parseFloat(params.caP2 || '0'),
             consumption_p3: parseFloat(params.caP3 || '0'),
-            // ... add other parameters as needed
+            contract_start_date: params.iniA,
+            contract_end_date: params.finContrato,
+            billing_start_date: params.iniF,
+            billing_end_date: params.finF,
+            invoice_date: params.fFact,
+            power_cost: parseFloat(params.impPot || '0'),
+            energy_cost: parseFloat(params.impEner || '0'),
+            total_amount: parseFloat(params.imp || '0'),
+            additional_services_cost: parseFloat(params.impSA || '0'),
+            other_costs_with_tax: parseFloat(params.impOtrosConIE || '0'),
+            other_costs_without_tax: parseFloat(params.impOtrosSinIE || '0'),
+            discount: parseFloat(params.dto || '0'),
+            power_rate_p1: parseFloat(params.prP1 || '0'),
+            power_rate_p2: parseFloat(params.prP2 || '0'),
+            energy_rate_p1: parseFloat(params.prE1 || '0'),
+            energy_rate_p2: parseFloat(params.prE2 || '0'),
+            energy_rate_p3: parseFloat(params.prE3 || '0'),
+            cups: params.cups,
+            tariff_code: params.tc,
+            marketer_code: params.com,
+            green_energy: params.verde === 'true',
+            has_permanence: params.finPen !== '0000-00-00',
             filename: fileInfo.originalName,
             filepath: fileInfo.path
           }
