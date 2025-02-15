@@ -104,7 +104,7 @@ const FileUpload = () => {
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${process.env.VITE_SUPABASE_ANON_KEY}`
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
           },
           body: formData
         }
