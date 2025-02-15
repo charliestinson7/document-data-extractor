@@ -27,6 +27,17 @@ interface Analysis {
   summary_stats: SummaryStats | null;
 }
 
+interface DatabaseAnalysis {
+  id: string;
+  created_at: string | null;
+  updated_at: string | null;
+  status: string;
+  input_files: Json;
+  output_file: string | null;
+  error: string | null;
+  summary_stats: Json | null;
+}
+
 export function useFileAnalysis() {
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -39,7 +50,7 @@ export function useFileAnalysis() {
     setProgress(0);
 
     try {
-      console.log('Starting file processing...'); // Debug log
+      console.log('Starting file processing...');
 
       const filePromises = files.map(async (file) => {
         return new Promise<{ name: string; type: string; content: string }>((resolve, reject) => {
@@ -54,7 +65,7 @@ export function useFileAnalysis() {
             });
           };
           reader.onerror = (error) => {
-            console.error('FileReader error:', error); // Debug log
+            console.error('FileReader error:', error);
             reject(new Error('Failed to read file'));
           };
           reader.readAsDataURL(file);
@@ -62,14 +73,14 @@ export function useFileAnalysis() {
       });
 
       const processedFiles = await Promise.all(filePromises);
-      console.log('Files converted to base64'); // Debug log
+      console.log('Files converted to base64');
 
       const { data, error: functionError } = await supabase.functions.invoke('process-pdfs', {
         body: { files: processedFiles }
       });
 
       if (functionError) {
-        console.error('Function invocation error:', functionError); // Debug log
+        console.error('Function invocation error:', functionError);
         toast({
           title: "Error",
           description: functionError.message || 'Failed to process files',
@@ -79,12 +90,12 @@ export function useFileAnalysis() {
         return;
       }
 
-      console.log('Edge function response:', data); // Debug log
+      console.log('Edge function response:', data);
       const { analysisId } = data;
 
       const pollingInterval = setInterval(async () => {
         try {
-          console.log('Polling for analysis status...'); // Debug log
+          console.log('Polling for analysis status...');
           const { data: dbAnalysis, error } = await supabase
             .from('pdf_analysis')
             .select('*')
@@ -92,7 +103,7 @@ export function useFileAnalysis() {
             .single();
 
           if (error) {
-            console.error('Polling error:', error); // Debug log
+            console.error('Polling error:', error);
             clearInterval(pollingInterval);
             setProcessing(false);
             toast({
@@ -104,16 +115,21 @@ export function useFileAnalysis() {
           }
 
           if (dbAnalysis) {
-            console.log('Analysis status:', dbAnalysis.status); // Debug log
-            setCurrentAnalysis(dbAnalysis as Analysis);
+            console.log('Analysis status:', dbAnalysis.status);
+            const typedAnalysis: Analysis = {
+              ...dbAnalysis,
+              summary_stats: dbAnalysis.summary_stats as SummaryStats | null
+            };
+            
+            setCurrentAnalysis(typedAnalysis);
 
             if (dbAnalysis.status === 'completed') {
               clearInterval(pollingInterval);
               setProgress(100);
               setProcessing(false);
 
-              if (dbAnalysis.summary_stats) {
-                const stats = dbAnalysis.summary_stats as SummaryStats;
+              if (typedAnalysis.summary_stats) {
+                const stats = typedAnalysis.summary_stats;
                 toast({
                   title: "Processing complete",
                   description: `Successfully processed ${stats.total_files_processed} files.\nTotal consumption (P1): ${stats.total_consumption_p1.toFixed(2)} kWh\nTotal amount: ${stats.total_amount.toFixed(2)}€`,
@@ -137,7 +153,7 @@ export function useFileAnalysis() {
             }
           }
         } catch (pollingError) {
-          console.error('Polling iteration error:', pollingError); // Debug log
+          console.error('Polling iteration error:', pollingError);
           // Don't clear interval here, let it retry
         }
       }, 2000);
@@ -146,7 +162,7 @@ export function useFileAnalysis() {
       return () => clearInterval(pollingInterval);
 
     } catch (error) {
-      console.error('Top-level error:', error); // Debug log
+      console.error('Top-level error:', error);
       toast({
         title: "Error",
         description: getErrorMessage(error),
@@ -160,13 +176,13 @@ export function useFileAnalysis() {
     if (!currentAnalysis?.output_file) return;
 
     try {
-      console.log('Starting download...'); // Debug log
+      console.log('Starting download...');
       const { data, error } = await supabase.storage
         .from('outputs')
         .download(currentAnalysis.output_file);
 
       if (error) {
-        console.error('Download error:', error); // Debug log
+        console.error('Download error:', error);
         toast({
           title: "Error",
           description: error.message || 'Failed to download results',
@@ -189,7 +205,7 @@ export function useFileAnalysis() {
         description: "Your results are being downloaded",
       });
     } catch (error) {
-      console.error('Download error:', error); // Debug log
+      console.error('Download error:', error);
       toast({
         title: "Error",
         description: getErrorMessage(error),

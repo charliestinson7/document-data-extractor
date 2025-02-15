@@ -1,10 +1,10 @@
-
 import React, { useCallback, useState, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Progress } from './ui/progress';
 import { Button } from './ui/button';
 import { Upload, FileText, X, Download } from 'lucide-react';
 import { useFileAnalysis } from '@/hooks/useFileAnalysis';
+import { toast } from '@/components/ui/use-toast';
 
 interface FileWithPreview extends File {
   preview?: string;
