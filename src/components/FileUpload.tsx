@@ -1,4 +1,3 @@
-
 import React, { useCallback, useState, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { toast } from '../components/ui/use-toast';
@@ -78,13 +77,16 @@ const FileUpload = () => {
         formData.append('files', file);
       });
 
+      // Get the current session
+      const { data: { session } } = await supabase.auth.getSession();
+
       const response = await fetch(
         'https://oknexztwmsdbpurjbtys.supabase.co/functions/v1/process-pdfs',
         {
           method: 'POST',
           body: formData,
           headers: {
-            'Authorization': `Bearer ${supabase.auth.session()?.access_token}`
+            'Authorization': `Bearer ${session?.access_token}`
           }
         }
       );
